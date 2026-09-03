@@ -20,7 +20,7 @@ const BUILTIN_PETS = {
     },
 };
 
-const SETTINGS_VERSION = 26;
+const SETTINGS_VERSION = 27;
 
 const DEFAULT_SETTINGS = {
     settingsVersion: SETTINGS_VERSION,
@@ -1605,7 +1605,7 @@ function findReachableJumpPlatform(direction = 0, options = {}) {
         }
 
         let score = 0;
-        const pointerActive = runtime.pointer.seen && !getActiveAttentionTarget();
+        const pointerActive = cursorRecentlyMoved() && !getActiveAttentionTarget();
         const cursorDx = pointerActive ? runtime.pointer.x - targetCenter : 0;
         const cursorDy = pointerActive ? runtime.pointer.y - platform.top : 0;
 
@@ -1807,8 +1807,8 @@ function shouldPausePursuitForNoProgress(now = performance.now()) {
     return (now - runtime.pursuitLastProgressAt) >= PHYSICS.cursorProgressTimeoutMs;
 }
 
-function cursorPursuitDirection() {
-    if (!runtime.pointer.seen || getActiveAttentionTarget()) {
+function cursorPursuitDirection(now = performance.now()) {
+    if (!runtime.pointer.seen || getActiveAttentionTarget() || !cursorRecentlyMoved(now)) {
         return 0;
     }
 
@@ -1824,7 +1824,7 @@ function cursorPursuitDirection() {
 }
 
 function cursorIsWellBelowPet() {
-    if (!runtime.pointer.seen || getActiveAttentionTarget()) {
+    if (!runtime.pointer.seen || getActiveAttentionTarget() || !cursorRecentlyMoved()) {
         return false;
     }
 
@@ -1838,12 +1838,10 @@ function pursueCursorWhileActive() {
         return;
     }
 
-    // A stale pointer position is not a chase target. During generation the pet
-    // only pursues the mouse while the mouse is actually moving.
-    if (runtime.generating && !cursorRecentlyMoved(now)) {
-        if (runtime.grounded) {
-            runtime.vx = 0;
-        }
+    // A stale pointer position is not a chase target. Stop using the cursor as
+    // navigation input, but do not stop the pet: generation can continue with
+    // autonomous/free movement.
+    if (!cursorRecentlyMoved(now)) {
         return;
     }
 
@@ -1895,11 +1893,12 @@ function startWalk(direction = 1, durationMs = randomBetween(850, 1800), speed =
     runtime.vx = direction * speed;
 }
 
-function startRun(direction = 1, durationMs = randomBetween(900, 1700), speed = PHYSICS.activeRunSpeed) {
+function startRun(direction = 1, durationMs = randomBetween(900, 1700), speed = PHYSICS.activeRunSpeed, mode = 'free') {
     const now = performance.now();
     runtime.currentBehavior = {
         type: 'run',
         direction,
+        mode,
         until: now + durationMs,
     };
     runtime.facing = direction;
@@ -2006,31 +2005,27 @@ function handleBehaviorTimers(now) {
     }
 
     if (runtime.generating) {
-        // Generation alone is NOT a reason to run or jump. The pet chases only
-        // while the mouse itself is moving. Once the mouse has been still for
-        // cursorStationaryMs, the pet settles to idle even if the cursor is far away.
-        if (!cursorRecentlyMoved(now)) {
-            runtime.vx = 0;
-            runtime.airborneVx = runtime.grounded ? null : runtime.airborneVx;
-
-            if (runtime.grounded && runtime.currentBehavior.type !== 'idle') {
-                const duration = 1200;
-                runtime.temporaryAnimation = null;
-                startIdle(duration);
-                runtime.nextIdleDecisionAt = now + duration;
+        if (cursorRecentlyMoved(now)) {
+            // Mouse is actively moving: chase it.
+            const direction = cursorPursuitDirection(now) || runtime.facing || 1;
+            if (runtime.currentBehavior.type !== 'run'
+                || runtime.currentBehavior.mode !== 'cursor'
+                || runtime.currentBehavior.direction !== direction
+                || now >= runtime.currentBehavior.until) {
+                startRun(direction, randomBetween(900, 1600), PHYSICS.activeRunSpeed, 'cursor');
             }
-            return;
+        } else {
+            // Mouse is stationary: forget its position completely and move freely.
+            // Keep a free run for a while, then occasionally choose a new direction.
+            if (runtime.currentBehavior.type !== 'run'
+                || runtime.currentBehavior.mode !== 'free'
+                || now >= runtime.currentBehavior.until) {
+                const direction = Math.random() < 0.5 ? -1 : 1;
+                startRun(direction, randomBetween(1800, 4200), PHYSICS.idleRunSpeed, 'free');
+            }
         }
 
-        const direction = cursorPursuitDirection() || runtime.facing || 1;
-        if (runtime.currentBehavior.type !== 'run'
-            || runtime.currentBehavior.direction !== direction
-            || now >= runtime.currentBehavior.until) {
-            startRun(direction, randomBetween(900, 1600), PHYSICS.activeRunSpeed);
-        }
-
-        // No random generation hops. Platform jumps happen only as part of
-        // actual cursor pursuit (edge traversal / cursor-below navigation).
+        // No random hop spam. Jumps happen only for actual platform traversal.
         return;
     }
 
@@ -2328,16 +2323,16 @@ function beginGenerationRequestActivity() {
     runtime.generating = true;
     runtime.nextHopAt = now + randomBetween(PHYSICS.hopIntervalMin, PHYSICS.hopIntervalMax);
 
-    // A request can make the pet eligible for active behavior, but it does not
-    // force movement toward a stale pointer position. Movement begins only when
-    // the mouse is currently moving.
+    // A request activates the pet. A moving mouse becomes the target; a
+    // stationary mouse is ignored and the pet moves autonomously.
     if (!runtime.dragging) {
         runtime.temporaryAnimation = null;
         if (cursorRecentlyMoved(now)) {
-            const direction = cursorPursuitDirection() || runtime.facing || 1;
-            startRun(direction, randomBetween(900, 1600), PHYSICS.activeRunSpeed);
+            const direction = cursorPursuitDirection(now) || runtime.facing || 1;
+            startRun(direction, randomBetween(900, 1600), PHYSICS.activeRunSpeed, 'cursor');
         } else if (runtime.grounded) {
-            startIdle(1200);
+            const direction = Math.random() < 0.5 ? -1 : 1;
+            startRun(direction, randomBetween(1800, 4200), PHYSICS.idleRunSpeed, 'free');
         }
     }
 }
