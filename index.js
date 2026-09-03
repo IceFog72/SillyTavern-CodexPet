@@ -20,7 +20,7 @@ const BUILTIN_PETS = {
     },
 };
 
-const SETTINGS_VERSION = 25;
+const SETTINGS_VERSION = 26;
 
 const DEFAULT_SETTINGS = {
     settingsVersion: SETTINGS_VERSION,
@@ -1735,6 +1735,12 @@ function tryJumpDownTowardCursor(direction = 0) {
 
 
 
+function cursorRecentlyMoved(now = performance.now()) {
+    return runtime.pointer.seen
+        && runtime.pointer.lastMovedAt > 0
+        && (now - runtime.pointer.lastMovedAt) < PHYSICS.cursorStationaryMs;
+}
+
 function cursorDistanceToPet() {
     if (!runtime.pointer.seen) {
         return Infinity;
@@ -1827,7 +1833,17 @@ function cursorIsWellBelowPet() {
 }
 
 function pursueCursorWhileActive() {
+    const now = performance.now();
     if (!runtime.pointer.seen || runtime.dragging || getActiveAttentionTarget()) {
+        return;
+    }
+
+    // A stale pointer position is not a chase target. During generation the pet
+    // only pursues the mouse while the mouse is actually moving.
+    if (runtime.generating && !cursorRecentlyMoved(now)) {
+        if (runtime.grounded) {
+            runtime.vx = 0;
+        }
         return;
     }
 
@@ -1848,7 +1864,6 @@ function pursueCursorWhileActive() {
         return;
     }
 
-    const now = performance.now();
     if (shouldPausePursuitForNoProgress(now)) {
         pausePursuitUntilCursorMoves();
         return;
@@ -1991,19 +2006,31 @@ function handleBehaviorTimers(now) {
     }
 
     if (runtime.generating) {
-        // Generation is the energetic state: use the dedicated running animation
-        // while preserving calmer walking for optional idle roaming.
-        if (runtime.currentBehavior.type !== 'run' || now >= runtime.currentBehavior.until) {
-            const direction = cursorPursuitDirection() || runtime.facing || 1;
-            startRun(direction, randomBetween(1100, 2200), PHYSICS.activeRunSpeed);
+        // Generation alone is NOT a reason to run or jump. The pet chases only
+        // while the mouse itself is moving. Once the mouse has been still for
+        // cursorStationaryMs, the pet settles to idle even if the cursor is far away.
+        if (!cursorRecentlyMoved(now)) {
+            runtime.vx = 0;
+            runtime.airborneVx = runtime.grounded ? null : runtime.airborneVx;
+
+            if (runtime.grounded && runtime.currentBehavior.type !== 'idle') {
+                const duration = 1200;
+                runtime.temporaryAnimation = null;
+                startIdle(duration);
+                runtime.nextIdleDecisionAt = now + duration;
+            }
+            return;
         }
 
-        if (now >= runtime.nextHopAt) {
-            if (Math.random() < 0.08) {
-                tryHop();
-            }
-            runtime.nextHopAt = now + randomBetween(PHYSICS.hopIntervalMin, PHYSICS.hopIntervalMax);
+        const direction = cursorPursuitDirection() || runtime.facing || 1;
+        if (runtime.currentBehavior.type !== 'run'
+            || runtime.currentBehavior.direction !== direction
+            || now >= runtime.currentBehavior.until) {
+            startRun(direction, randomBetween(900, 1600), PHYSICS.activeRunSpeed);
         }
+
+        // No random generation hops. Platform jumps happen only as part of
+        // actual cursor pursuit (edge traversal / cursor-below navigation).
         return;
     }
 
@@ -2301,11 +2328,17 @@ function beginGenerationRequestActivity() {
     runtime.generating = true;
     runtime.nextHopAt = now + randomBetween(PHYSICS.hopIntervalMin, PHYSICS.hopIntervalMax);
 
-    // The active/run state starts at the actual LLM request, not when ST begins
-    // prompt assembly or emits GENERATION_STARTED.
+    // A request can make the pet eligible for active behavior, but it does not
+    // force movement toward a stale pointer position. Movement begins only when
+    // the mouse is currently moving.
     if (!runtime.dragging) {
         runtime.temporaryAnimation = null;
-        startRun(runtime.facing || 1, randomBetween(1100, 2200), PHYSICS.activeRunSpeed);
+        if (cursorRecentlyMoved(now)) {
+            const direction = cursorPursuitDirection() || runtime.facing || 1;
+            startRun(direction, randomBetween(900, 1600), PHYSICS.activeRunSpeed);
+        } else if (runtime.grounded) {
+            startIdle(1200);
+        }
     }
 }
 
@@ -2369,10 +2402,9 @@ function onStreamTokenReceived() {
         return;
     }
 
+    // Keep token activity bookkeeping, but do not create random bounce/jump
+    // reactions. Those made a stationary far-away cursor cause constant jumping.
     runtime.streamPulseUntil = performance.now() + 1200;
-    if (Math.random() < 0.12) {
-        playTemporaryAnimation('bounce', 1100);
-    }
 }
 
 function bindAppEvents() {
