@@ -20,7 +20,7 @@ const BUILTIN_PETS = {
     },
 };
 
-const SETTINGS_VERSION = 21;
+const SETTINGS_VERSION = 23;
 
 const DEFAULT_SETTINGS = {
     settingsVersion: SETTINGS_VERSION,
@@ -58,6 +58,9 @@ const PHYSICS = {
     downJumpVelocity: 300,
     maxPlatformJumpSpeed: 220,
     platformJumpSafety: 0.90,
+    edgeJumpLookaheadMin: 28,
+    edgeJumpLookaheadMax: 70,
+    edgeJumpMomentumFactor: 0.92,
     maxFallSpeed: 1500,
     dragThreshold: 6,
     hopIntervalMin: 9000,
@@ -164,6 +167,7 @@ const runtime = {
     nextIdleDecisionAt: 0,
     nextHopAt: 0,
     nextJumpAllowedAt: 0,
+    manualIdleUntil: 0,
     rafId: 0,
     loopPrevTs: 0,
     platforms: [],
@@ -892,6 +896,10 @@ function getCurrentAnimationName(now) {
         return 'idle';
     }
 
+    if (now < runtime.manualIdleUntil && runtime.grounded) {
+        return 'idle';
+    }
+
     if (runtime.temporaryAnimation) {
         return runtime.temporaryAnimation.name;
     }
@@ -1512,17 +1520,24 @@ function platformJumpFlightTime(verticalDelta, jumpVelocity = PHYSICS.jumpVeloci
     return (v + Math.sqrt(discriminant)) / PHYSICS.gravity;
 }
 
-function jumpTargetX(platform) {
+function platformLandingCenterBounds(platform) {
     const width = petWidth();
-    const currentCenter = runtime.x + width * 0.5;
     const inset = Math.min(28, Math.max(10, width * 0.20));
-    const minCenter = platform.left + inset;
-    const maxCenter = platform.right - inset;
+    let minCenter = platform.left + inset;
+    let maxCenter = platform.right - inset;
 
     if (maxCenter <= minCenter) {
-        return (platform.left + platform.right) * 0.5;
+        const center = (platform.left + platform.right) * 0.5;
+        minCenter = center;
+        maxCenter = center;
     }
 
+    return { minCenter, maxCenter };
+}
+
+function jumpTargetX(platform) {
+    const currentCenter = runtime.x + petWidth() * 0.5;
+    const { minCenter, maxCenter } = platformLandingCenterBounds(platform);
     return Math.max(minCenter, Math.min(maxCenter, currentCenter));
 }
 
@@ -1678,7 +1693,29 @@ function tryPlatformJump(direction = 0, ignoreCooldown = false, options = {}) {
         return false;
     }
 
-    const vx = target.dx / target.flightTime;
+    let vx = target.dx / target.flightTime;
+
+    if (options.preserveMomentum && Math.abs(runtime.vx) > 1) {
+        const currentCenter = runtime.x + petWidth() * 0.5;
+        const { minCenter, maxCenter } = platformLandingCenterBounds(target.platform);
+        const momentumVx = runtime.vx * PHYSICS.edgeJumpMomentumFactor;
+        const momentumDirectionMatches = !direction || Math.sign(momentumVx) === Math.sign(direction);
+
+        if (momentumDirectionMatches) {
+            const projectedCenter = currentCenter + momentumVx * target.flightTime;
+
+            if (projectedCenter >= minCenter && projectedCenter <= maxCenter) {
+                vx = momentumVx;
+            } else if (momentumVx > 0 && maxCenter > currentCenter) {
+                // Keep the maximum forward momentum that still lands safely.
+                vx = Math.max(vx, (maxCenter - currentCenter) / target.flightTime);
+            } else if (momentumVx < 0 && minCenter < currentCenter) {
+                vx = Math.min(vx, (minCenter - currentCenter) / target.flightTime);
+            }
+        }
+    }
+
+    vx = Math.max(-PHYSICS.maxPlatformJumpSpeed, Math.min(PHYSICS.maxPlatformJumpSpeed, vx));
     return startJump(jumpVelocity, vx, target.platform.id, ignoreCooldown);
 }
 
@@ -1834,6 +1871,14 @@ function chooseIdleBehavior(now) {
 }
 
 function handleBehaviorTimers(now) {
+    if (now < runtime.manualIdleUntil) {
+        runtime.vx = 0;
+        if (runtime.grounded && runtime.currentBehavior.type !== 'idle') {
+            startIdle(Math.max(250, runtime.manualIdleUntil - now));
+        }
+        return;
+    }
+
     const attentionTarget = getActiveAttentionTarget(now);
     if (attentionTarget) {
         if (runtime.grounded && !runtime.dragging) {
@@ -1909,12 +1954,40 @@ function handleEdge(platform) {
     }
 
     const footprint = petFootprintBounds();
-    if (runtime.vx < 0 && footprint.left <= platform.left + settings.edgePadding) {
-        if (!tryPlatformJump(-1)) {
+    const speed = Math.abs(runtime.vx);
+    const lookahead = Math.max(
+        PHYSICS.edgeJumpLookaheadMin,
+        Math.min(
+            PHYSICS.edgeJumpLookaheadMax,
+            settings.edgePadding + petWidth() * 0.12 + speed * 0.32,
+        ),
+    );
+    const now = performance.now();
+
+    if (runtime.vx < 0) {
+        const distanceToEdge = footprint.left - platform.left;
+
+        // Launch before the feet reach the ledge so the walk/run momentum is
+        // visible in the jump instead of turning into a vertical hop at x=edge.
+        if (distanceToEdge <= lookahead && now >= runtime.nextJumpAllowedAt) {
+            if (tryPlatformJump(-1, false, { preserveMomentum: true })) {
+                return;
+            }
+        }
+
+        if (distanceToEdge <= settings.edgePadding) {
             reverseDirection();
         }
-    } else if (runtime.vx > 0 && footprint.right >= platform.right - settings.edgePadding) {
-        if (!tryPlatformJump(1)) {
+    } else if (runtime.vx > 0) {
+        const distanceToEdge = platform.right - footprint.right;
+
+        if (distanceToEdge <= lookahead && now >= runtime.nextJumpAllowedAt) {
+            if (tryPlatformJump(1, false, { preserveMomentum: true })) {
+                return;
+            }
+        }
+
+        if (distanceToEdge <= settings.edgePadding) {
             reverseDirection();
         }
     }
@@ -1941,7 +2014,9 @@ function physicsStep(dt) {
     const tempBlocksHorizontalMotion = runtime.temporaryAnimation
         && !HORIZONTAL_MOTION_TEMP_ANIMATIONS.has(runtime.temporaryAnimation.name);
 
-    if (!runtime.grounded && runtime.airborneVx != null) {
+    if (performance.now() < runtime.manualIdleUntil && runtime.grounded) {
+        runtime.vx = 0;
+    } else if (!runtime.grounded && runtime.airborneVx != null) {
         runtime.vx = attentionTarget ? 0 : runtime.airborneVx;
     } else if (attentionTarget || tempBlocksHorizontalMotion) {
         runtime.vx = 0;
@@ -2114,6 +2189,7 @@ function isGenerationRequestUrl(input) {
 
 function beginGenerationRequestActivity() {
     const now = performance.now();
+    runtime.manualIdleUntil = 0;
     runtime.generationRequestActive = true;
     runtime.generationRequestStartedAt = now;
     runtime.generating = true;
@@ -2183,7 +2259,7 @@ function onGenerationEnded() {
 }
 
 function onStreamTokenReceived() {
-    if (!runtime.generationRequestActive) {
+    if (!runtime.generationRequestActive || performance.now() < runtime.manualIdleUntil) {
         return;
     }
 
@@ -2265,7 +2341,18 @@ function bindPointerHandlers() {
         requestPlatformRefresh();
         snapDraggedPetToNearestSurface();
         if (!runtime.dragMoved) {
-            playTemporaryAnimation('wave_once', 850, { bubble: 'hi' });
+            const now = performance.now();
+            const idleDuration = 4000;
+
+            runtime.temporaryAnimation = null;
+            runtime.attentionTarget = null;
+            runtime.jumpTargetId = null;
+            runtime.airborneVx = null;
+            runtime.vx = 0;
+            runtime.manualIdleUntil = now + idleDuration;
+            startIdle(idleDuration);
+            runtime.nextIdleDecisionAt = runtime.manualIdleUntil;
+            runtime.animationState = { name: '', startedAt: 0 };
         }
         persistPosition(true);
     };
