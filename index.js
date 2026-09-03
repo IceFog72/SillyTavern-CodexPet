@@ -20,7 +20,7 @@ const BUILTIN_PETS = {
     },
 };
 
-const SETTINGS_VERSION = 23;
+const SETTINGS_VERSION = 25;
 
 const DEFAULT_SETTINGS = {
     settingsVersion: SETTINGS_VERSION,
@@ -71,6 +71,9 @@ const PHYSICS = {
     positionPersistMs: 500,
     moodPollMs: 500,
     petCatalogRefreshMs: 12000,
+    cursorStationaryMs: 900,
+    cursorProgressTimeoutMs: 1100,
+    cursorProgressEpsilon: 5,
 };
 
 const EXPRESSION_TO_REACTION = {
@@ -182,7 +185,11 @@ const runtime = {
     petReloadPromise: null,
     petCatalogRefreshPromise: null,
     nextPetCatalogRefreshAt: 0,
-    pointer: { x: 0, y: 0, seen: false },
+    pointer: { x: 0, y: 0, seen: false, lastMovedAt: 0, moveSerial: 0 },
+    pursuitLastDistance: null,
+    pursuitLastProgressAt: 0,
+    pursuitPausedForCursor: false,
+    pursuitPauseSerial: -1,
     attentionTarget: null,
     jumpTargetId: null,
     airborneVx: null,
@@ -1727,6 +1734,73 @@ function tryJumpDownTowardCursor(direction = 0) {
 }
 
 
+
+function cursorDistanceToPet() {
+    if (!runtime.pointer.seen) {
+        return Infinity;
+    }
+
+    const petCenterX = runtime.x + petWidth() * 0.5;
+    const petCenterY = runtime.y + petHeight() * 0.55;
+    return Math.hypot(runtime.pointer.x - petCenterX, runtime.pointer.y - petCenterY);
+}
+
+function resetCursorProgressTracking() {
+    runtime.pursuitLastDistance = runtime.pointer.seen ? cursorDistanceToPet() : null;
+    runtime.pursuitLastProgressAt = performance.now();
+}
+
+function pausePursuitUntilCursorMoves() {
+    runtime.pursuitPausedForCursor = true;
+    runtime.pursuitPauseSerial = runtime.pointer.moveSerial;
+    runtime.vx = 0;
+    runtime.airborneVx = null;
+
+    if (runtime.grounded && !runtime.dragging) {
+        const duration = 60000;
+        startIdle(duration);
+        runtime.nextIdleDecisionAt = performance.now() + duration;
+    }
+}
+
+function shouldPausePursuitForNoProgress(now = performance.now()) {
+    if (!runtime.pointer.seen || runtime.dragging || getActiveAttentionTarget()) {
+        resetCursorProgressTracking();
+        return false;
+    }
+
+    if (!runtime.grounded || !['walk', 'run'].includes(runtime.currentBehavior.type)) {
+        resetCursorProgressTracking();
+        return false;
+    }
+
+    const mouseStationary = (now - runtime.pointer.lastMovedAt) >= PHYSICS.cursorStationaryMs;
+    if (!mouseStationary) {
+        resetCursorProgressTracking();
+        return false;
+    }
+
+    const distance = cursorDistanceToPet();
+    if (runtime.pursuitLastDistance == null) {
+        runtime.pursuitLastDistance = distance;
+        runtime.pursuitLastProgressAt = now;
+        return false;
+    }
+
+    if (distance <= runtime.pursuitLastDistance - PHYSICS.cursorProgressEpsilon) {
+        runtime.pursuitLastDistance = distance;
+        runtime.pursuitLastProgressAt = now;
+        return false;
+    }
+
+    // Small jitter does not count as meaningful progress.
+    if (distance < runtime.pursuitLastDistance) {
+        runtime.pursuitLastDistance = distance;
+    }
+
+    return (now - runtime.pursuitLastProgressAt) >= PHYSICS.cursorProgressTimeoutMs;
+}
+
 function cursorPursuitDirection() {
     if (!runtime.pointer.seen || getActiveAttentionTarget()) {
         return 0;
@@ -1757,9 +1831,26 @@ function pursueCursorWhileActive() {
         return;
     }
 
+    if (runtime.pursuitPausedForCursor) {
+        if (runtime.pointer.moveSerial === runtime.pursuitPauseSerial) {
+            runtime.vx = 0;
+            return;
+        }
+
+        runtime.pursuitPausedForCursor = false;
+        runtime.pursuitPauseSerial = -1;
+        resetCursorProgressTracking();
+    }
+
     // "Idle" means no chase. Any locomotion state should instead try to close
     // the horizontal distance to the pointer.
     if (!['walk', 'run', 'jump'].includes(runtime.currentBehavior.type) && !runtime.generating) {
+        return;
+    }
+
+    const now = performance.now();
+    if (shouldPausePursuitForNoProgress(now)) {
+        pausePursuitUntilCursorMoves();
         return;
     }
 
@@ -1871,6 +1962,15 @@ function chooseIdleBehavior(now) {
 }
 
 function handleBehaviorTimers(now) {
+    if (runtime.pursuitPausedForCursor
+        && runtime.pointer.moveSerial === runtime.pursuitPauseSerial) {
+        runtime.vx = 0;
+        if (runtime.grounded && runtime.currentBehavior.type !== 'idle') {
+            startIdle(60000);
+        }
+        return;
+    }
+
     if (now < runtime.manualIdleUntil) {
         runtime.vx = 0;
         if (runtime.grounded && runtime.currentBehavior.type !== 'idle') {
@@ -2190,6 +2290,12 @@ function isGenerationRequestUrl(input) {
 function beginGenerationRequestActivity() {
     const now = performance.now();
     runtime.manualIdleUntil = 0;
+    if (runtime.pursuitPausedForCursor
+        && runtime.pointer.moveSerial !== runtime.pursuitPauseSerial) {
+        runtime.pursuitPausedForCursor = false;
+        runtime.pursuitPauseSerial = -1;
+    }
+    resetCursorProgressTracking();
     runtime.generationRequestActive = true;
     runtime.generationRequestStartedAt = now;
     runtime.generating = true;
@@ -2300,6 +2406,9 @@ function bindPointerHandlers() {
         runtime.dragMoved = false;
         runtime.jumpTargetId = null;
         runtime.airborneVx = null;
+        runtime.pursuitPausedForCursor = false;
+        runtime.pursuitPauseSerial = -1;
+        resetCursorProgressTracking();
         runtime.nextJumpAllowedAt = performance.now() + 1200;
         runtime.dragOffsetX = event.clientX - runtime.x;
         runtime.dragOffsetY = event.clientY - runtime.y;
@@ -2353,6 +2462,9 @@ function bindPointerHandlers() {
             startIdle(idleDuration);
             runtime.nextIdleDecisionAt = runtime.manualIdleUntil;
             runtime.animationState = { name: '', startedAt: 0 };
+
+            // Keep the click-as-reset behavior, but bring back the friendly greeting.
+            showBubble('hi', 1400);
         }
         persistPosition(true);
     };
@@ -2575,9 +2687,22 @@ function bindObservers() {
     });
 
     window.addEventListener('pointermove', event => {
+        const now = performance.now();
+        const dx = event.clientX - runtime.pointer.x;
+        const dy = event.clientY - runtime.pointer.y;
+        const moved = !runtime.pointer.seen || Math.hypot(dx, dy) >= 3;
+
         runtime.pointer.x = event.clientX;
         runtime.pointer.y = event.clientY;
         runtime.pointer.seen = true;
+
+        if (moved) {
+            runtime.pointer.lastMovedAt = now;
+            runtime.pointer.moveSerial += 1;
+            runtime.pursuitPausedForCursor = false;
+            runtime.pursuitPauseSerial = -1;
+            resetCursorProgressTracking();
+        }
     }, { passive: true });
     window.addEventListener('resize', requestPlatformRefresh);
     window.addEventListener('scroll', requestPlatformRefresh, true);
