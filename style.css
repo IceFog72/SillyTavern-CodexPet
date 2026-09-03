@@ -1,0 +1,104 @@
+#codex_pet_root {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 3999;
+}
+
+#codex_pet_root.codex-pet-hidden {
+    display: none;
+}
+
+.codex-pet-actor {
+    position: absolute;
+    left: 0;
+    top: 0;
+    pointer-events: auto;
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+    will-change: transform;
+}
+
+.codex-pet-actor.dragging {
+    cursor: grabbing;
+}
+
+.codex-pet-sprite {
+    background-repeat: no-repeat;
+    transform-origin: 50% 50%;
+    image-rendering: auto;
+    filter: drop-shadow(0 3px 10px rgba(0,0,0,0.42));
+}
+
+.codex-pet-bubble {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    min-width: 28px;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: rgba(28, 28, 38, 0.82);
+    color: var(--SmartThemeBodyColor, #fff);
+    font-size: 0.75rem;
+    line-height: 1;
+    opacity: 0;
+    transition: opacity 0.16s ease;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.codex-pet-bubble.visible {
+    opacity: 1;
+}
+
+.codex-pet-debug {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    display: none;
+}
+
+#codex_pet_root.codex-pet-debug-visible .codex-pet-debug {
+    display: block;
+}
+
+.codex-pet-platform-line {
+    position: absolute;
+    height: 0;
+    border-top: 2px dashed rgba(61, 214, 118, 0.85);
+    filter: drop-shadow(0 0 2px rgba(0,0,0,0.65));
+}
+
+.codex-pet-settings .codex-pet-row {
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.codex-pet-settings .codex-pet-setting-block {
+    margin-bottom: 0.9rem;
+}
+
+.codex-pet-settings textarea {
+    width: 100%;
+    resize: vertical;
+}
+
+.codex-pet-settings code {
+    font-family: var(--monoFontFamily, monospace);
+}
+
+.codex-pet-settings .codex-pet-pet-picker {
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.codex-pet-settings .codex-pet-pet-picker select {
+    flex: 1 1 240px;
+}
+
+.codex-pet-settings #codex_pet_active_source {
+    overflow-wrap: anywhere;
+}

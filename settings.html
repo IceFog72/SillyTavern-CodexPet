@@ -1,0 +1,88 @@
+<div id="codex_pet_settings" class="codex-pet-settings inline-drawer">
+    <div class="inline-drawer-toggle inline-drawer-header">
+        <b>Codex Pet</b>
+        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+    </div>
+    <div class="inline-drawer-content">
+        <div class="codex-pet-setting-block">
+            <label for="codex_pet_select">Pet</label>
+            <div class="flex-container codex-pet-pet-picker">
+                <select id="codex_pet_select" class="text_pole"></select>
+                <button id="codex_pet_refresh_pets" class="menu_button" type="button">Refresh pets</button>
+            <small>Auto-discovery folder: <code>data/&lt;user&gt;/assets/pet/&lt;name&gt;/</code></small>
+            </div>
+            <small>Auto prefers <code>spritesheet.webp</code> from the current character expression folder, then a pet from <code>data/&lt;user&gt;/assets/pet/&lt;name&gt;/</code>, otherwise Lumi. New pet folders are detected automatically.</small>
+            <small>Active source: <code id="codex_pet_active_source">loading…</code></small>
+        </div>
+
+        <div class="flex-container codex-pet-row">
+            <label class="checkbox_label" for="codex_pet_enabled">
+                <input id="codex_pet_enabled" type="checkbox" />
+                Enabled
+            </label>
+            <label class="checkbox_label" for="codex_pet_generation_boost">
+                <input id="codex_pet_generation_boost" type="checkbox" />
+                More active while generating
+            </label>
+        </div>
+
+        <div class="flex-container codex-pet-row">
+            <label class="checkbox_label" for="codex_pet_gravity_enabled">
+                <input id="codex_pet_gravity_enabled" type="checkbox" />
+                Gravity
+            </label>
+            <label class="checkbox_label" for="codex_pet_platforms_enabled">
+                <input id="codex_pet_platforms_enabled" type="checkbox" />
+                DOM platforms enabled
+            </label>
+            <label class="checkbox_label" for="codex_pet_auto_platforms">
+                <input id="codex_pet_auto_platforms" type="checkbox" />
+                Auto-detect visible div/platform surfaces
+            </label>
+            <label class="checkbox_label" for="codex_pet_div_bottom_platforms">
+                <input id="codex_pet_div_bottom_platforms" type="checkbox" />
+                Treat bottom edge of DIVs as platforms too
+            </label>
+        </div>
+
+        <div class="flex-container codex-pet-row">
+            <label class="checkbox_label" for="codex_pet_idle_roam">
+                <input id="codex_pet_idle_roam" type="checkbox" />
+                Allow slow idle walking (33%)
+            </label>
+            <label class="checkbox_label" for="codex_pet_cursor_tracking">
+                <input id="codex_pet_cursor_tracking" type="checkbox" />
+                Allow cursor tracking idle (50%)
+            </label>
+            <label class="checkbox_label" for="codex_pet_react_expressions">
+                <input id="codex_pet_react_expressions" type="checkbox" />
+                React to expressions
+            </label>
+        </div>
+
+        <div class="flex-container codex-pet-row">
+            <label class="checkbox_label" for="codex_pet_debug_platforms">
+                <input id="codex_pet_debug_platforms" type="checkbox" />
+                Show platform debug overlay
+            </label>
+            <button id="codex_pet_reset_position" class="menu_button" type="button">Reset pet position</button>
+        </div>
+
+        <div class="codex-pet-setting-block">
+            <label for="codex_pet_scale">Scale: <span id="codex_pet_scale_value">0.50</span></label>
+            <small>Pet atlas rows/columns and frame aspect are auto-normalized; this slider is only a final global size multiplier.</small>
+            <input id="codex_pet_scale" type="range" min="0.25" max="1.00" step="0.01" />
+        </div>
+
+        <div class="codex-pet-setting-block">
+            <label for="codex_pet_floor_offset">Viewport floor offset (px)</label>
+            <input id="codex_pet_floor_offset" class="text_pole" type="number" min="0" step="1" />
+        </div>
+
+        <div class="codex-pet-setting-block">
+            <label for="codex_pet_platform_selectors">Platform selectors (one per line)</label>
+            <textarea id="codex_pet_platform_selectors" class="text_pole" rows="7" placeholder="[data-pet-platform]\n#send_form\n#chat"></textarea>
+            <small>Explicit selectors always count as platforms. Auto-detection also finds visible bordered/tinted panels while filtering large layout wrappers and duplicate nested divs. Add <code>data-pet-platform</code> for guaranteed custom surfaces.</small>
+        </div>
+    </div>
+</div>

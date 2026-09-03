@@ -1,0 +1,17 @@
+{
+  "display_name": "SillyTavern-CodexPet",
+  "loading_order": 100,
+  "requires": [],
+  "optional": [],
+  "dependencies": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "IceFog72",
+  "version": "0.2.21",
+  "homePage": "https://github.com/IceFog72/SillyTavern-CodexPet",
+  "auto_update": true,
+  "minimum_client_version": "1.18.0",
+  "hooks": {
+    "activate": "init"
+  }
+}
