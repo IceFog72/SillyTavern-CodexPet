@@ -4,7 +4,7 @@ import { lastExpression } from '../../expressions/index.js';
 
 export { init };
 
-const MODULE_NAME = 'third-party/codex-pet';
+const MODULE_NAME = 'third-party/SillyTavern-CodexPet';
 const SETTINGS_KEY = 'codexPet';
 const DOM_IDS = {
     root: 'codex_pet_root',
