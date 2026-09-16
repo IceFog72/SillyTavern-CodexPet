@@ -49,13 +49,33 @@
         return 'walk';
     }
 
-    function detectRows(image) {
+    function detectSpritesheetGrid(image) {
         const estimatedRows = Math.round(
             (image.naturalHeight / image.naturalWidth)
             * CONFIG.columns
-            * CONFIG.frameWidth / CONFIG.frameHeight,
+            * (CONFIG.frameWidth / CONFIG.frameHeight),
         );
-        return Math.max(1, Math.min(32, estimatedRows || CONFIG.rows));
+        const rows = Math.max(1, Math.min(32, estimatedRows || CONFIG.rows));
+        const sourceCellAspect = (image.naturalWidth / CONFIG.columns)
+            / (image.naturalHeight / rows);
+        const expectedCellAspect = CONFIG.frameWidth / CONFIG.frameHeight;
+        const aspectError = Math.abs(sourceCellAspect - expectedCellAspect) / expectedCellAspect;
+
+        return aspectError <= 0.12
+            ? { columns: CONFIG.columns, rows, detected: true }
+            : { columns: CONFIG.columns, rows: CONFIG.rows, detected: false };
+    }
+
+    function getFrameMetrics(image) {
+        const grid = detectSpritesheetGrid(image);
+        const sourceCellWidth = image.naturalWidth / grid.columns;
+        const sourceCellHeight = image.naturalHeight / grid.rows;
+        return {
+            width: CONFIG.frameWidth,
+            height: Math.round(CONFIG.frameWidth * sourceCellHeight / sourceCellWidth),
+            columns: grid.columns,
+            rows: grid.rows,
+        };
     }
 
     function visibleElement(element, root) {
@@ -156,13 +176,13 @@
         global.document.body.appendChild(root);
 
         const style = createStyles();
-        const width = Math.round(CONFIG.frameWidth * CONFIG.scale);
-        const height = Math.round(CONFIG.frameHeight * CONFIG.scale);
-        const rows = detectRows(image);
+        const frame = getFrameMetrics(image);
+        const width = Math.round(frame.width * CONFIG.scale);
+        const height = Math.round(frame.height * CONFIG.scale);
         actor.style.width = `${width}px`;
         actor.style.height = `${height}px`;
         sprite.style.backgroundImage = `url(${JSON.stringify(SPRITESHEET_URL)})`;
-        sprite.style.backgroundSize = `${CONFIG.columns * width}px ${rows * height}px`;
+        sprite.style.backgroundSize = `${frame.columns * width}px ${frame.rows * height}px`;
 
         const state = {
             x: 32,
@@ -264,8 +284,8 @@
                 }
                 remaining -= duration;
             }
-            const column = spriteIndex % CONFIG.columns;
-            const row = Math.floor(spriteIndex / CONFIG.columns);
+            const column = spriteIndex % frame.columns;
+            const row = Math.floor(spriteIndex / frame.columns);
             actor.style.transform = `translate(${Math.round(state.x)}px, ${Math.round(state.y)}px)`;
             sprite.style.backgroundPosition = `${-column * width}px ${-row * height}px`;
             sprite.style.transform = state.facing < 0 && animationName === 'run' ? 'scaleX(-1)' : 'none';
@@ -401,7 +421,7 @@
     }
 
     if (typeof module !== 'undefined' && module.exports) {
-        module.exports = { chooseIdleBehavior, collectPlatforms, detectRows };
+        module.exports = { chooseIdleBehavior, collectPlatforms, detectSpritesheetGrid, getFrameMetrics };
     } else if (global.document) {
         if (global.document.readyState === 'loading') global.document.addEventListener('DOMContentLoaded', start, { once: true });
         else start();
