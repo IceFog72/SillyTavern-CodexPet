@@ -1,7 +1,7 @@
 /*
  * Standalone Codex Pet embed.
  * Edit SPRITESHEET_URL below, then paste this file into any page.
- * The URL must point to the same 8-column / 9-row spritesheet used by the extension.
+ * The URL must point to the same 8-column spritesheet used by the extension.
  */
 (function (global) {
     'use strict';
@@ -47,6 +47,15 @@
         if (roll < 1 / 3) return 'run';
         if (roll < 2 / 3) return 'idle';
         return 'walk';
+    }
+
+    function detectRows(image) {
+        const estimatedRows = Math.round(
+            (image.naturalHeight / image.naturalWidth)
+            * CONFIG.columns
+            * CONFIG.frameWidth / CONFIG.frameHeight,
+        );
+        return Math.max(1, Math.min(32, estimatedRows || CONFIG.rows));
     }
 
     function visibleElement(element, root) {
@@ -130,7 +139,7 @@
         return style;
     }
 
-    function createPet() {
+    function createPet(image) {
         if (!SPRITESHEET_URL || SPRITESHEET_URL === 'PASTE_SPRITESHEET_URL_HERE') {
             throw new Error('Set SPRITESHEET_URL in codex-pet-embed.js first.');
         }
@@ -149,10 +158,11 @@
         const style = createStyles();
         const width = Math.round(CONFIG.frameWidth * CONFIG.scale);
         const height = Math.round(CONFIG.frameHeight * CONFIG.scale);
+        const rows = detectRows(image);
         actor.style.width = `${width}px`;
         actor.style.height = `${height}px`;
         sprite.style.backgroundImage = `url(${JSON.stringify(SPRITESHEET_URL)})`;
-        sprite.style.backgroundSize = `${CONFIG.columns * width}px ${CONFIG.rows * height}px`;
+        sprite.style.backgroundSize = `${CONFIG.columns * width}px ${rows * height}px`;
 
         const state = {
             x: 32,
@@ -381,7 +391,7 @@
         const image = new global.Image();
         image.onload = () => {
             try {
-                global.CodexPetEmbed = createPet();
+                global.CodexPetEmbed = createPet(image);
             } catch (error) {
                 console.error('[Codex Pet] Failed to initialize:', error);
             }
@@ -391,7 +401,7 @@
     }
 
     if (typeof module !== 'undefined' && module.exports) {
-        module.exports = { chooseIdleBehavior, collectPlatforms };
+        module.exports = { chooseIdleBehavior, collectPlatforms, detectRows };
     } else if (global.document) {
         if (global.document.readyState === 'loading') global.document.addEventListener('DOMContentLoaded', start, { once: true });
         else start();
