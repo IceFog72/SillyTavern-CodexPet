@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const context = { module: { exports: {} } };
-vm.runInNewContext(fs.readFileSync('./codex-pet-embed.js', 'utf8'), context);
+vm.runInNewContext(fs.readFileSync('./codex-pet-embed-v2.js', 'utf8'), context);
 const {
     chooseIdleBehavior,
     collectPlatforms,

@@ -68,10 +68,10 @@ Default idle choices are weighted per decision: 50% cursor tracking, 33% slow wa
 
 ## Standalone page embed
 
-Use [`codex-pet-embed.js`](./codex-pet-embed.js) on any page. Set `SPRITESHEET_URL` near the top of the file to the URL of the pet's 8-column spritesheet, then add:
+Use [`codex-pet-embed-v2.js`](./codex-pet-embed-v2.js) on any page. Set `SPRITESHEET_URL` near the top of the file to the URL of the pet's 8-column spritesheet, then add:
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/IceFog72/SillyTavern-CodexPet@main/codex-pet-embed.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/IceFog72/SillyTavern-CodexPet@main/codex-pet-embed-v2.js"></script>
 ```
 
 The standalone version has no settings or persistence. It uses `div` and `p` as platform selectors and chooses running, standing idle, and slow walking with equal 33% probability. The pet remains draggable and uses the viewport floor plus visible `div`/`p` top edges for one-way landing.

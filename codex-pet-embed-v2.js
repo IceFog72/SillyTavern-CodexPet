@@ -161,7 +161,7 @@
 
     function createPet(image) {
         if (!SPRITESHEET_URL || SPRITESHEET_URL === 'PASTE_SPRITESHEET_URL_HERE') {
-            throw new Error('Set SPRITESHEET_URL in codex-pet-embed.js first.');
+            throw new Error('Set SPRITESHEET_URL in codex-pet-embed-v2.js first.');
         }
 
         const root = global.document.createElement('div');
